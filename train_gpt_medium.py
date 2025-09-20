@@ -436,6 +436,9 @@ class GPT(nn.Module):
         ]
         assert len(block_masks) == len(self.blocks)
 
+        import pdb
+
+        pdb.set_trace()
         x = x0 = norm(self.embed(input_seq)[None])  # use of norm here by @Grad62304977
 
         skip_connections = []
@@ -760,9 +763,6 @@ for step in range(train_steps + 1):
 
     # --------------- TRAINING SECTION -----------------
     inputs, targets = next(train_loader)
-    import pdb
-
-    pdb.set_trace()
     model(inputs, targets, get_window_size_blocks(step)).backward()
     # set optimization hyperparameters
     for opt in optimizers:
