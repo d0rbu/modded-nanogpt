@@ -16,7 +16,6 @@ import torch
 torch.empty(
     1, device="cuda", requires_grad=True
 ).backward()  # prevents a bug on some systems
-import torch.distributed as dist
 import torch.nn.functional as F
 from torch import Tensor, nn
 
@@ -80,16 +79,37 @@ def update(
     eff_lr: Tensor,
     eff_weight_decay: Tensor,
 ):
+    """
+    Memory-efficient parameter update that reconstructs float32 precision from bfloat16 + mantissa.
+
+    The key insight: bfloat16 has 16 bits total, but we can reconstruct higher precision by:
+    1. Storing the bfloat16 parameter normally
+    2. Maintaining extra mantissa bits as a separate uint16 tensor
+    3. Combining them into uint32 (effectively float32) for precise computation
+    4. Splitting the result back into bfloat16 + mantissa for storage
+
+    This gives us ~23 bits of effective precision instead of bfloat16's 16 bits.
+    """
     assert acc_bf16_view_u16.dtype == mantissa.dtype == torch.uint16
     grad = grad.float()
+
+    # Standard momentum update in float32 precision
     momentum_buffer.copy_(momentum * momentum_buffer + (1 - momentum) * grad)
+
+    # Compute orthogonalized update using Newton-Schulz iteration
     v = zeropower_via_newtonschulz5(momentum * momentum_buffer + (1 - momentum) * grad)
 
+    # Reconstruct float32 precision from bfloat16 + extra mantissa bits
+    # This is the clever part: combine stored bfloat16 with extra mantissa to get float32
     acc_m_u32 = (acc_bf16_view_u16.to(torch.uint32) << 16) | mantissa.to(torch.uint32)
-    acc_m_u32.view(torch.float32).mul_(1 - eff_weight_decay)
-    acc_m_u32.view(torch.float32).add_(other=v, alpha=-eff_lr)
-    acc_bf16_view_u16.copy_((acc_m_u32 >> 16).to(torch.uint16))
-    mantissa.copy_(acc_m_u32.to(torch.uint16))
+
+    # Perform the actual parameter update in float32 precision
+    acc_m_u32.view(torch.float32).mul_(1 - eff_weight_decay)  # weight decay
+    acc_m_u32.view(torch.float32).add_(other=v, alpha=-eff_lr)  # gradient step
+
+    # Split the result back: high 16 bits → bfloat16, low 16 bits → extra mantissa
+    acc_bf16_view_u16.copy_((acc_m_u32 >> 16).to(torch.uint16))  # bfloat16 part
+    mantissa.copy_(acc_m_u32.to(torch.uint16))  # extra mantissa bits
 
 
 class Muon(torch.optim.Optimizer):
@@ -107,11 +127,7 @@ class Muon(torch.optim.Optimizer):
     or any {0,1}-D parameters; those should all be optimized by a standard method (e.g., AdamW).
     """
 
-    def __init__(
-        self, params, lr=0.02, weight_decay=0.01, momentum=0.95, rank=0, world_size=1
-    ):
-        self.rank = rank
-        self.world_size = world_size
+    def __init__(self, params, lr=0.02, weight_decay=0.01, momentum=0.95):
         defaults = dict(lr=lr, weight_decay=weight_decay, momentum=momentum)
         super().__init__(params, defaults)
         assert all(
@@ -122,43 +138,29 @@ class Muon(torch.optim.Optimizer):
 
     @torch.no_grad()
     def step(self):
-        futures: list[torch.Future] = []
         for group in self.param_groups:
             params: list[Tensor] = group["params"]
-            params_pad = params + [torch.empty_like(params[-1])] * self.world_size
             momentum = torch._as_tensor_fullprec(group["momentum"])
-            for base_i in range(len(params))[:: self.world_size]:
-                if base_i + self.rank < len(params):
-                    p = params[base_i + self.rank]
-                    state = self.state[p]
-                    if len(state) == 0:
-                        state["mantissa"] = torch.zeros_like(p, dtype=torch.uint16)
-                        state["momentum_buffer"] = torch.zeros_like(
-                            p, dtype=torch.float32
-                        )
-                    update(
-                        p.view(torch.uint16),
-                        state["mantissa"],
-                        state["momentum_buffer"],
-                        p.grad,
-                        momentum,
-                        eff_lr=torch._as_tensor_fullprec(
-                            group["lr"] * max(1, p.size(-2) / p.size(-1)) ** 0.5
-                        ),
-                        eff_weight_decay=torch._as_tensor_fullprec(
-                            group["lr"]
-                            * group["weight_decay"]
-                            * getattr(p, "wd_mul", 1.0)
-                        ),
-                    )
-                futures.append(
-                    dist.all_gather(
-                        params_pad[base_i : base_i + self.world_size],
-                        params_pad[base_i + self.rank],
-                        async_op=True,
-                    ).get_future()
+            for p in params:
+                state = self.state[p]
+                if len(state) == 0:
+                    # Initialize extra mantissa bits - starts as zeros, accumulates precision over time
+                    state["mantissa"] = torch.zeros_like(p, dtype=torch.uint16)
+                    # Standard momentum buffer for gradient accumulation
+                    state["momentum_buffer"] = torch.zeros_like(p, dtype=torch.float32)
+                update(
+                    p.view(torch.uint16),
+                    state["mantissa"],
+                    state["momentum_buffer"],
+                    p.grad,
+                    momentum,
+                    eff_lr=torch._as_tensor_fullprec(
+                        group["lr"] * max(1, p.size(-2) / p.size(-1)) ** 0.5
+                    ),
+                    eff_weight_decay=torch._as_tensor_fullprec(
+                        group["lr"] * group["weight_decay"] * getattr(p, "wd_mul", 1.0)
+                    ),
                 )
-        torch.futures.collect_all(futures).wait()
 
 
 # -----------------------------------------------------------------------------
@@ -497,12 +499,8 @@ def _load_data_shard(file: Path):
     return tokens
 
 
-def distributed_data_generator(
-    filename_pattern: str, batch_size: int, rank: int, world_size: int
-):
+def data_generator(filename_pattern: str, batch_size: int):
     files = sorted(Path.cwd().glob(filename_pattern))
-    assert batch_size % world_size == 0
-    local_batch_size = batch_size // world_size
     file_iter = iter(
         files
     )  # use itertools.cycle(files) instead if you want to do multi-epoch training
@@ -510,13 +508,9 @@ def distributed_data_generator(
     while True:
         if pos + batch_size + 1 >= len(tokens):
             tokens, pos = _load_data_shard(next(file_iter)), 0
-        buf = tokens[pos + rank * local_batch_size :][: local_batch_size + 1]
-        inputs = buf[:-1].to(
-            device="cuda", dtype=torch.int32, non_blocking=True
-        )  # no sync on host side;
-        targets = buf[1:].to(
-            device="cuda", dtype=torch.int64, non_blocking=True
-        )  # H2D in another stream isn't helpful.
+        buf = tokens[pos : pos + batch_size + 1]
+        inputs = buf[:-1].to(device="cuda", dtype=torch.int32, non_blocking=True)
+        targets = buf[1:].to(device="cuda", dtype=torch.int64, non_blocking=True)
         pos += batch_size
         yield inputs, targets
 
@@ -550,30 +544,23 @@ class Hyperparameters:
 args = Hyperparameters()
 
 run_id = int(os.environ.get("RUN_ID", 0))
-# torchrun sets these env variables
-rank = int(os.environ["RANK"])
-world_size = int(os.environ["WORLD_SIZE"])
+# Single GPU setup
 assert torch.cuda.is_available()
-device = torch.device("cuda", int(os.environ["LOCAL_RANK"]))
+device = torch.device("cuda", 0)
 torch.cuda.set_device(device)
-dist.init_process_group(backend="nccl", device_id=device)
-dist.barrier()
-master_process = rank == 0  # this process will do logging, checkpointing etc.
 
 # begin logging
-if master_process:
-    run_id_full = f"{run_id:03d}_{uuid.uuid4()}"
-    os.makedirs("logs", exist_ok=True)
-    logfile = f"logs/{run_id_full}.txt"
-    print(logfile)
+run_id_full = f"{run_id:03d}_{uuid.uuid4()}"
+os.makedirs("logs", exist_ok=True)
+logfile = f"logs/{run_id_full}.txt"
+print(logfile)
 
 
 def print0(s, console=False):
-    if master_process:
-        with open(logfile, "a") as f:
-            if console:
-                print(s)
-            print(s, file=f)
+    with open(logfile, "a") as f:
+        if console:
+            print(s)
+        print(s, file=f)
 
 
 import torch._inductor.codecache  # noqa: E402
@@ -625,8 +612,6 @@ model: nn.Module = GPT(
 for m in model.modules():
     if isinstance(m, nn.Embedding):
         m.bfloat16()
-for param in model.parameters():
-    dist.broadcast(param.detach(), 0)
 
 # collect the parameters to optimize
 hidden_matrix_params = sorted(
@@ -654,9 +639,7 @@ adam_param_groups = [
 optimizer1 = torch.optim.AdamW(
     adam_param_groups, betas=(0.8, 0.95), eps=1e-10, weight_decay=0.0, fused=True
 )
-optimizer2 = Muon(
-    hidden_matrix_params, lr=0.025, momentum=0.95, rank=rank, world_size=world_size
-)
+optimizer2 = Muon(hidden_matrix_params, lr=0.025, momentum=0.95)
 optimizers: list[torch.optim.Optimizer] = [optimizer1, optimizer2]
 
 
@@ -714,8 +697,6 @@ for _ in range(warmup_steps):
         0, args.vocab_size, size=(args.train_seq_len,), device="cuda"
     )
     model(inputs.to(torch.int32), targets, get_window_size_blocks(0)).backward()
-    for param in model.parameters():
-        dist.all_reduce(param.grad, op=dist.ReduceOp.AVG)
     for opt in optimizers:
         opt.step()
     model.zero_grad(set_to_none=True)
@@ -729,12 +710,9 @@ del initial_state
 ########################################
 
 torch.cuda.reset_peak_memory_stats()
-train_loader = distributed_data_generator(
-    args.train_files, world_size * args.train_seq_len, rank, world_size
-)
+train_loader = data_generator(args.train_files, args.train_seq_len)
 training_time_ms = 0
 # start the clock
-dist.barrier()
 t0 = time.perf_counter()
 # begin training
 train_steps = args.num_iterations
@@ -744,15 +722,12 @@ for step in range(train_steps + 1):
     # --------------- VALIDATION SECTION -----------------
     if last_step or (args.val_loss_every > 0 and step % args.val_loss_every == 0):
         # stop the clock
-        dist.barrier()
         training_time_ms += 1000 * (time.perf_counter() - t0)
         model.eval()
-        val_batch_size = world_size * args.val_seq_len
+        val_batch_size = args.val_seq_len
         assert args.val_tokens % val_batch_size == 0
         val_steps = args.val_tokens // val_batch_size
-        val_loader = distributed_data_generator(
-            args.val_files, val_batch_size, rank, world_size
-        )
+        val_loader = data_generator(args.val_files, val_batch_size)
         val_loss = 0
         with torch.no_grad():
             for _ in range(val_steps):
@@ -760,14 +735,12 @@ for step in range(train_steps + 1):
                 val_loss += model(inputs, targets, get_window_size_blocks(step))
         val_loss /= val_steps
         del val_loader
-        dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
         print0(
             f"step:{step}/{train_steps} val_loss:{val_loss:.6f} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms / max(step, 1):.2f}ms",
             console=True,
         )
         model.train()
         # start the clock again
-        dist.barrier()
         t0 = time.perf_counter()
 
     if last_step:
@@ -786,13 +759,6 @@ for step in range(train_steps + 1):
     # --------------- TRAINING SECTION -----------------
     inputs, targets = next(train_loader)
     model(inputs, targets, get_window_size_blocks(step)).backward()
-    opt2futures = {
-        opt: [
-            dist.all_reduce(p.grad, op=dist.ReduceOp.AVG, async_op=True).get_future()
-            for p in params
-        ]
-        for opt, params in opt2params.items()
-    }
     # set optimization hyperparameters
     for opt in optimizers:
         for group in opt.param_groups:
@@ -802,7 +768,6 @@ for step in range(train_steps + 1):
         group["momentum"] = (1 - frac) * 0.85 + frac * 0.95
     # step the optimizers
     for opt in optimizers:
-        torch.futures.collect_all(opt2futures[opt]).wait()
         opt.step()
     # null the gradients
     model.zero_grad(set_to_none=True)
@@ -818,4 +783,3 @@ print0(
     f"reserved: {torch.cuda.max_memory_reserved() // 1024 // 1024} MiB",
     console=True,
 )
-dist.destroy_process_group()
