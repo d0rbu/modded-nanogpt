@@ -436,9 +436,6 @@ class GPT(nn.Module):
         ]
         assert len(block_masks) == len(self.blocks)
 
-        import pdb
-
-        pdb.set_trace()
         x = x0 = norm(self.embed(input_seq)[None])  # use of norm here by @Grad62304977
 
         skip_connections = []
@@ -532,8 +529,8 @@ class Hyperparameters:
         "data/fineweb10B/fineweb_val_*.bin"  # input .bin to eval validation loss on
     )
     val_tokens = 10485760  # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
-    train_seq_len = 2 * 1024  # FlexAttention sequence length
-    val_seq_len = 4 * 2 * 1024  # FlexAttention sequence length for validation
+    train_seq_len = 5 * 1024  # FlexAttention sequence length
+    val_seq_len = 4 * 5 * 1024  # FlexAttention sequence length for validation
     # optimization
     num_iterations = 5960  # number of iterations to run
     cooldown_frac = 0.7  # fraction of training spent cooling down the learning rate
@@ -686,7 +683,7 @@ def get_window_size_blocks(step: int):
     return get_window_size_blocks_helper(window_size)
 
 
-# model: nn.Module = torch.compile(model, dynamic=False)
+model: nn.Module = torch.compile(model, dynamic=False)
 
 ########################################
 #            Warmup kernels            #
