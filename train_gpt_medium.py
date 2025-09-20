@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+from tqdm import tqdm
+
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 print("importing torch...")
 import torch
@@ -718,7 +720,7 @@ training_time_ms = 0
 t0 = time.perf_counter()
 # begin training
 train_steps = args.num_iterations
-for step in range(train_steps + 1):
+for step in tqdm(range(train_steps + 1), desc="Training", total=train_steps + 1):
     last_step = step == train_steps
 
     # --------------- VALIDATION SECTION -----------------
