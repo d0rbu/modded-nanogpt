@@ -572,12 +572,10 @@ import torch._inductor.graph  # noqa: E402
 from torch._logging._internal import trace_structured  # noqa: E402
 
 
-def _patched_trace_structured(name, *args, **kwargs):
+def _patched_trace_structured(name, metadata_fn, **kwargs):
     if name == "inductor_output_code":
-        print0(args)
-        print0(kwargs)
-        # print0(f"inductor_output_code: {metadata_fn().get('filename', 'Unknown')}")
-    trace_structured(name, *args, **kwargs)
+        print0(f"inductor_output_code: {metadata_fn().get('filename', 'Unknown')}")
+    trace_structured(name, metadata_fn, **kwargs)
 
 
 torch._inductor.codecache.trace_structured = _patched_trace_structured
@@ -781,7 +779,6 @@ for step in tqdm(range(train_steps + 1), desc="Training", total=train_steps + 1)
     approx_training_time_ms = training_time_ms + 1000 * (time.perf_counter() - t0)
     print0(
         f"step:{step + 1}/{train_steps} train_time:{approx_training_time_ms:.0f}ms step_avg:{approx_training_time_ms / (step + 1):.2f}ms",
-        console=True,
     )
 
 print0(
