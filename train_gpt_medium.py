@@ -686,7 +686,7 @@ def get_window_size_blocks(step: int):
     return get_window_size_blocks_helper(window_size)
 
 
-model: nn.Module = torch.compile(model, dynamic=False)
+# model: nn.Module = torch.compile(model, dynamic=False)
 
 ########################################
 #            Warmup kernels            #
