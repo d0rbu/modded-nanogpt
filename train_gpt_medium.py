@@ -27,7 +27,7 @@ from torch import Tensor, nn
 from torch.nn.attention.flex_attention import BlockMask, flex_attention
 
 torch._inductor.config.coordinate_descent_tuning = (
-    False  # we allow this flag for medium track
+    True  # we allow this flag for medium track
 )
 torch._dynamo.config.compiled_autograd = False
 
