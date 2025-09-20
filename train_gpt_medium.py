@@ -25,9 +25,9 @@ from torch import Tensor, nn
 from torch.nn.attention.flex_attention import BlockMask, flex_attention
 
 torch._inductor.config.coordinate_descent_tuning = (
-    True  # we allow this flag for medium track
+    False  # we allow this flag for medium track
 )
-torch._dynamo.config.compiled_autograd = False
+torch._dynamo.config.compiled_autograd = True
 
 # -----------------------------------------------------------------------------
 # Muon optimizer
@@ -529,8 +529,8 @@ class Hyperparameters:
         "data/fineweb10B/fineweb_val_*.bin"  # input .bin to eval validation loss on
     )
     val_tokens = 10485760  # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
-    train_seq_len = 512  # FlexAttention sequence length
-    val_seq_len = 512  # FlexAttention sequence length for validation
+    train_seq_len = 2 * 1024  # FlexAttention sequence length
+    val_seq_len = 4 * 2 * 1024  # FlexAttention sequence length for validation
     # optimization
     num_iterations = 5960  # number of iterations to run
     cooldown_frac = 0.7  # fraction of training spent cooling down the learning rate
@@ -760,6 +760,9 @@ for step in range(train_steps + 1):
 
     # --------------- TRAINING SECTION -----------------
     inputs, targets = next(train_loader)
+    import pdb
+
+    pdb.set_trace()
     model(inputs, targets, get_window_size_blocks(step)).backward()
     # set optimization hyperparameters
     for opt in optimizers:
