@@ -744,7 +744,7 @@ for step in range(train_steps + 1):
         t0 = time.perf_counter()
 
     if last_step:
-        if master_process and args.save_checkpoint:
+        if args.save_checkpoint:
             log = dict(
                 step=step,
                 code=code,
