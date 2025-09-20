@@ -3,6 +3,7 @@ import sys
 
 with open(sys.argv[0]) as f:
     code = f.read()  # read the code of this file ASAP, for logging
+print("importing modules...")
 import copy
 import time
 import uuid
@@ -11,6 +12,7 @@ from functools import lru_cache
 from pathlib import Path
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+print("importing torch...")
 import torch
 
 torch.empty(
