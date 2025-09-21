@@ -41,5 +41,5 @@ echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
 # Change to the project directory
 cd ~/modded-nanogpt
 
-# Run the distributed job
-run.sh
+# Run the non-distributed job
+./run.sh
