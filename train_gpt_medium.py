@@ -3,7 +3,6 @@ import sys
 
 with open(sys.argv[0]) as f:
     code = f.read()  # read the code of this file ASAP, for logging
-print("importing modules...")
 import copy
 import time
 import uuid
@@ -14,7 +13,6 @@ from pathlib import Path
 from tqdm import tqdm
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-print("importing torch...")
 import torch
 
 torch.empty(
@@ -531,16 +529,18 @@ class Hyperparameters:
         "data/fineweb10B/fineweb_val_*.bin"  # input .bin to eval validation loss on
     )
     val_tokens = 10485760  # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
-    train_seq_len = 32 * 1024  # FlexAttention sequence length
-    val_seq_len = 4 * 32 * 1024  # FlexAttention sequence length for validation
+    train_seq_len = 48 * 1024  # FlexAttention sequence length
+    val_seq_len = 4 * 48 * 1024  # FlexAttention sequence length for validation
     # optimization
-    num_iterations = 5960  # number of iterations to run
+    grad_accum_steps = 8
+    num_iterations = 6_144  # number of iterations to run
     cooldown_frac = 0.7  # fraction of training spent cooling down the learning rate
     # architecture
     vocab_size = 50257
     # evaluation and logging
     val_loss_every = (
-        125  # every how many steps to evaluate val loss? 0 for only at the end
+        grad_accum_steps
+        * 16  # every how many steps to evaluate val loss? 0 for only at the end
     )
     save_checkpoint = False
 
@@ -719,7 +719,8 @@ training_time_ms = 0
 # start the clock
 t0 = time.perf_counter()
 # begin training
-train_steps = args.num_iterations
+grad_accum_steps = args.grad_accum_steps
+train_steps = args.num_iterations * grad_accum_steps
 for step in tqdm(range(train_steps + 1), desc="Training", total=train_steps + 1):
     last_step = step == train_steps
 
@@ -763,18 +764,23 @@ for step in tqdm(range(train_steps + 1), desc="Training", total=train_steps + 1)
     # --------------- TRAINING SECTION -----------------
     inputs, targets = next(train_loader)
     model(inputs, targets, get_window_size_blocks(step)).backward()
-    # set optimization hyperparameters
-    for opt in optimizers:
-        for group in opt.param_groups:
-            group["lr"] = group["initial_lr"] * get_lr(step)
-    for group in optimizer2.param_groups:
-        frac = min(step / 300, 1)  # momentum warmup for muon
-        group["momentum"] = (1 - frac) * 0.85 + frac * 0.95
-    # step the optimizers
-    for opt in optimizers:
-        opt.step()
-    # null the gradients
-    model.zero_grad(set_to_none=True)
+    if step % grad_accum_steps == (grad_accum_steps - 1):
+        # set optimization hyperparameters
+        for opt in optimizers:
+            for group in opt.param_groups:
+                group["lr"] = group["initial_lr"] * get_lr(step)
+        for group in optimizer2.param_groups:
+            frac = min(step / 300, 1)  # momentum warmup for muon
+            group["momentum"] = (1 - frac) * 0.85 + frac * 0.95
+        # step the optimizers
+        for opt in optimizers:
+            opt.step()
+        # null the gradients
+        model.zero_grad(set_to_none=True)
+        print0(
+            f"grad accum step:{(step // grad_accum_steps) + 1}/{train_steps // grad_accum_steps}"
+        )
+
     # logging
     approx_training_time_ms = training_time_ms + 1000 * (time.perf_counter() - t0)
     print0(
