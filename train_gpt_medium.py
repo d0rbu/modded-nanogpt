@@ -759,6 +759,7 @@ for step in tqdm(range(train_steps + 1), desc="Training", total=train_steps + 1)
             )
             os.makedirs(f"logs/{run_id_full}", exist_ok=True)
             torch.save(log, f"logs/{run_id_full}/state_step{step:06d}.pt")
+            torch.save(log["model"], f"logs/{run_id_full}/latest_model.pt")
         # the last step only has the validation loop, so break to avoid training
         break
 
