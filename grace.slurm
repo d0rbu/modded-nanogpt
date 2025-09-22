@@ -44,3 +44,4 @@ cd ~/modded-nanogpt
 
 # Run the non-distributed job
 ./run.sh
+./eval.sh
