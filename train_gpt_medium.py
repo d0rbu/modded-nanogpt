@@ -724,6 +724,7 @@ grad_accum_steps = args.grad_accum_steps
 train_steps = args.num_iterations * grad_accum_steps
 for step in tqdm(range(train_steps + 1), desc="Training", total=train_steps + 1):
     last_step = step == train_steps
+    update_step = step // grad_accum_steps
 
     # --------------- VALIDATION SECTION -----------------
     if last_step or (args.val_loss_every > 0 and step % args.val_loss_every == 0):
@@ -738,7 +739,7 @@ for step in tqdm(range(train_steps + 1), desc="Training", total=train_steps + 1)
         with torch.no_grad():
             for _ in range(val_steps):
                 inputs, targets = next(val_loader)
-                val_loss += model(inputs, targets, get_window_size_blocks(step))
+                val_loss += model(inputs, targets, get_window_size_blocks(update_step))
         val_loss /= val_steps
         del val_loader
         print0(
@@ -765,23 +766,21 @@ for step in tqdm(range(train_steps + 1), desc="Training", total=train_steps + 1)
 
     # --------------- TRAINING SECTION -----------------
     inputs, targets = next(train_loader)
-    model(inputs, targets, get_window_size_blocks(step)).backward()
+    model(inputs, targets, get_window_size_blocks(update_step)).backward()
     if step % grad_accum_steps == (grad_accum_steps - 1):
         # set optimization hyperparameters
         for opt in optimizers:
             for group in opt.param_groups:
-                group["lr"] = group["initial_lr"] * get_lr(step)
+                group["lr"] = group["initial_lr"] * get_lr(update_step)
         for group in optimizer2.param_groups:
-            frac = min(step / 300, 1)  # momentum warmup for muon
+            frac = min(update_step / 300, 1)  # momentum warmup for muon
             group["momentum"] = (1 - frac) * 0.85 + frac * 0.95
         # step the optimizers
         for opt in optimizers:
             opt.step()
         # null the gradients
         model.zero_grad(set_to_none=True)
-        print0(
-            f"grad accum step:{(step // grad_accum_steps) + 1}/{train_steps // grad_accum_steps}"
-        )
+        print0(f"grad accum step:{update_step + 1}/{train_steps // grad_accum_steps}")
 
     # logging
     approx_training_time_ms = training_time_ms + 1000 * (time.perf_counter() - t0)
