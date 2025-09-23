@@ -1,20 +1,20 @@
 #!/bin/bash
 
 ##NECESSARY JOB SPECIFICATIONS  
-#SBATCH --job-name=modded-nanogpt       # Set the job name to "get_activations"
-#SBATCH --time=25:00:00                 # Set the wall clock limit to 6 hours
-#SBATCH --ntasks=1                      # Total number of tasks (processes) across all nodes
-#SBATCH --ntasks-per-node=1             # Number of tasks per node
-#SBATCH --mem=16G                       # Request 16GB per node
-#SBATCH --output=modded-nanogpt.%j      # Send stdout/err to "modded-nanogpt.[jobID]"
-#SBATCH --error=modded-nanogpt.%j.err   # Send stderr to separate file
-#SBATCH --gres=gpu:a100:1               # Request 2 "a100" GPUs per node
-#SBATCH --partition=gpu                 # Request the GPU partition/queue
+#SBATCH --job-name=modded-nanogpt-eval      # Set the job name to "get_activations"
+#SBATCH --time=01:00:00                     # Set the wall clock limit to 1 hour
+#SBATCH --ntasks=1                          # Total number of tasks (processes) across all nodes
+#SBATCH --ntasks-per-node=1                 # Number of tasks per node
+#SBATCH --mem=16G                           # Request 16GB per node
+#SBATCH --output=modded-nanogpt-eval.%j     # Send stdout/err to "modded-nanogpt-eval.[jobID]"
+#SBATCH --error=modded-nanogpt-eval.%j.err  # Send stderr to separate file
+#SBATCH --gres=gpu:a100:1                   # Request 1 a100 per node
+#SBATCH --partition=gpu                     # Request the GPU partition/queue
 
 ##OPTIONAL JOB SPECIFICATIONS
-##SBATCH --account=123456                # Set billing account to 123456
-##SBATCH --mail-type=ALL                 # Send email on all job events
-##SBATCH --mail-user=email_address       # Send all emails to email_address
+##SBATCH --account=123456                   # Set billing account to 123456
+##SBATCH --mail-type=ALL                    # Send email on all job events
+##SBATCH --mail-user=email_address          # Send all emails to email_address
 
 # Enable detailed logging
 set -x
@@ -43,5 +43,4 @@ echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
 cd ~/modded-nanogpt
 
 # Run the non-distributed job
-./run.sh
 ./eval.sh
