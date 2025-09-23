@@ -1,18 +1,28 @@
 from pathlib import Path
 
+print("importing torch...")
+
 import arguably
 import torch as th
 import torch.nn.functional as F
 import yaml
+
+print("importing lm_eval...")
+
 from lm_eval import evaluator
 from lm_eval.models.huggingface import HFLM
 from loguru import logger
+
+logger.info("importing transformers...")
+
 from transformers import (
     AutoTokenizer,
     PretrainedConfig,
     PreTrainedModel,
 )
 from transformers.modeling_outputs import CausalLMOutputWithPast
+
+logger.info("importing train_gpt_medium...")
 
 from train_gpt_medium import (
     GPT,
