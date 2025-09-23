@@ -14,7 +14,13 @@ from transformers import (
 )
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
-from train_gpt_medium import GPT, args, get_window_size_blocks_helper, norm
+from train_gpt_medium import (
+    GPT,
+    args,
+    get_window_size_blocks_helper,
+    next_multiple_of_n,
+    norm,
+)
 
 
 class EvaluationGPT(GPT):
@@ -24,9 +30,25 @@ class EvaluationGPT(GPT):
         assert input_ids.ndim == 2
         assert labels is None or labels.ndim == 2
 
-        num_samples = input_ids.shape[0]
+        input_ids_with_eos_separators = th.cat(
+            [input_ids, th.full((input_ids.shape[0], 1), 50256)], dim=1
+        )
 
-        input_ids_flat = input_ids.flatten()
+        del input_ids
+
+        num_samples = input_ids_with_eos_separators.shape[0]
+
+        input_ids_flat_unpadded = input_ids_with_eos_separators.flatten()
+        unpadded_len = input_ids_flat_unpadded.shape[0]
+        padded_len = next_multiple_of_n(unpadded_len, n=128)
+        padding_len = padded_len - unpadded_len
+
+        input_ids_flat = th.cat(
+            [input_ids_flat_unpadded, th.full((padding_len,), 50256)], dim=0
+        )
+
+        del input_ids_flat_unpadded
+
         labels_flat = labels.flatten() if labels is not None else None
 
         ve = [value_embed(input_ids_flat) for value_embed in self.value_embeds]
@@ -86,12 +108,16 @@ class EvaluationGPT(GPT):
 
         x = norm(x)
 
+        unpadded_outputs = x[:, :unpadded_len]
+        unrolled_outputs = unpadded_outputs.view(*input_ids_with_eos_separators, -1)
+        outputs = unrolled_outputs[:, :-1]
+
         loss = None
         if labels_flat is not None:
             loss = 0
             for i in range(num_samples):
                 logits: th.Tensor = F.linear(
-                    x.flatten(end_dim=1).chunk(num_samples)[i],
+                    outputs.flatten(end_dim=1).chunk(num_samples)[i],
                     self.lm_head_w.bfloat16(),
                 ).float()
                 loss += (
@@ -102,9 +128,7 @@ class EvaluationGPT(GPT):
                     / num_samples
                 )
 
-        # just return the probabilities
-        output = x.view(*input_ids.shape)
-        logits: th.Tensor = F.linear(output, self.lm_head_w.bfloat16()).float()
+        logits: th.Tensor = F.linear(outputs, self.lm_head_w.bfloat16()).float()
 
         return CausalLMOutputWithPast(
             loss=loss,
