@@ -18,8 +18,11 @@ import torch
 torch.empty(
     1, device="cuda", requires_grad=True
 ).backward()  # prevents a bug on some systems
+import torch._inductor.codecache  # noqa: E402
+import torch._inductor.graph  # noqa: E402
 import torch.nn.functional as F
 from torch import Tensor, nn
+from torch._logging._internal import trace_structured  # noqa: E402
 
 # use of FlexAttention contributed by @KoszarskyB
 from torch.nn.attention.flex_attention import BlockMask, flex_attention
@@ -567,10 +570,6 @@ def main():
             if console:
                 print(s)
             print(s, file=f)
-
-    import torch._inductor.codecache  # noqa: E402
-    import torch._inductor.graph  # noqa: E402
-    from torch._logging._internal import trace_structured  # noqa: E402
 
     def _patched_trace_structured(name, *args, **kwargs):
         if name == "inductor_output_code":
