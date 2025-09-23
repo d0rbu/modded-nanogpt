@@ -150,20 +150,18 @@ def main(logs_dirpath: str = "logs"):
     logger.info(f"Evaluating logs in {logs_dirpath}")
     logs_dir = Path(logs_dirpath)
 
-    if not logs_dir.exists():
-        raise FileNotFoundError(f"Logs directory {logs_dirpath} does not exist")
+    assert logs_dir.exists(), f"Logs directory {logs_dirpath} does not exist"
 
-    run_dirpaths = set(logs_dir.glob("*/"))
+    run_dirpaths = set(child for child in logs_dir.iterdir() if child.is_dir())
 
-    if len(run_dirpaths) > 1:
-        raise ValueError(f"Multiple run directories found in {logs_dirpath}")
+    assert len(run_dirpaths) <= 1, f"Multiple run directories found in {logs_dirpath}"
+    assert len(run_dirpaths) > 0, f"No run directories found in {logs_dirpath}"
 
     run_dirpath = run_dirpaths.pop()
 
     logger.info(f"Finding latest model in {run_dirpath}")
     model_path = run_dirpath / "latest_model.pt"
-    if not model_path.exists():
-        raise FileNotFoundError(f"Model path {model_path} does not exist")
+    assert model_path.exists(), f"Model path {model_path} does not exist"
 
     logger.info(f"Loading model from {model_path}")
     model = CustomModel(CustomConfig(), model_path)
