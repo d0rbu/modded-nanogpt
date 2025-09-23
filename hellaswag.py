@@ -135,7 +135,15 @@ class CustomModel(PreTrainedModel):
         )
 
         logger.info(f"Loading model state dict from {model_path}")
-        self.model.load_state_dict(th.load(model_path))
+        model_state_dict = th.load(model_path)
+
+        logger.info("Renaming keys in model state dict")
+        for key in model_state_dict:
+            if key.startswith("_orig_mod."):
+                model_state_dict[key.replace("_orig_mod.", "")] = model_state_dict[key]
+            del model_state_dict[key]
+
+        self.model.load_state_dict(model_state_dict)
 
         logger.info("Initializing tokenizer")
         self.tokenizer = AutoTokenizer.from_pretrained("gpt2")
