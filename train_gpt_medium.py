@@ -544,254 +544,259 @@ class Hyperparameters:
         grad_accum_steps
         * 16  # every how many steps to evaluate val loss? 0 for only at the end
     )
-    save_checkpoint = False
+    save_checkpoint = True
 
 
-args = Hyperparameters()
+def main():
+    args = Hyperparameters()
 
-run_id = int(os.environ.get("RUN_ID", 0))
-# Single GPU setup
-assert torch.cuda.is_available()
-device = torch.device("cuda", 0)
-torch.cuda.set_device(device)
+    run_id = int(os.environ.get("RUN_ID", 0))
+    # Single GPU setup
+    assert torch.cuda.is_available()
+    device = torch.device("cuda", 0)
+    torch.cuda.set_device(device)
 
-# begin logging
-run_id_full = f"{run_id:03d}_{uuid.uuid4()}"
-os.makedirs("logs", exist_ok=True)
-logfile = f"logs/{run_id_full}.txt"
-print(logfile)
+    # begin logging
+    run_id_full = f"{run_id:03d}_{uuid.uuid4()}"
+    os.makedirs("logs", exist_ok=True)
+    logfile = f"logs/{run_id_full}.txt"
+    print(logfile)
 
+    def print0(s, console=False):
+        with open(logfile, "a") as f:
+            if console:
+                print(s)
+            print(s, file=f)
 
-def print0(s, console=False):
-    with open(logfile, "a") as f:
-        if console:
-            print(s)
-        print(s, file=f)
+    import torch._inductor.codecache  # noqa: E402
+    import torch._inductor.graph  # noqa: E402
+    from torch._logging._internal import trace_structured  # noqa: E402
 
+    def _patched_trace_structured(name, *args, **kwargs):
+        if name == "inductor_output_code":
+            metadata_fn = args[0]
+            print0(f"inductor_output_code: {metadata_fn().get('filename', 'Unknown')}")
+        trace_structured(name, *args, **kwargs)
 
-import torch._inductor.codecache  # noqa: E402
-import torch._inductor.graph  # noqa: E402
-from torch._logging._internal import trace_structured  # noqa: E402
+    torch._inductor.codecache.trace_structured = _patched_trace_structured
+    torch._inductor.graph.trace_structured = _patched_trace_structured
 
-
-def _patched_trace_structured(name, *args, **kwargs):
-    if name == "inductor_output_code":
-        metadata_fn = args[0]
-        print0(f"inductor_output_code: {metadata_fn().get('filename', 'Unknown')}")
-    trace_structured(name, *args, **kwargs)
-
-
-torch._inductor.codecache.trace_structured = _patched_trace_structured
-torch._inductor.graph.trace_structured = _patched_trace_structured
-
-# begin by printing this file (the Python code)
-print0(code)
-print0("=" * 100)
-# log information about the hardware/software environment this is running on
-print0(f"Running Python {sys.version}")
-print0(
-    f"Running PyTorch {torch.version.__version__} compiled for CUDA {torch.version.cuda}"
-)
-
-
-def nvidia_smi():
-    import subprocess  # avoid top level import
-
-    return subprocess.run(
-        ["nvidia-smi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-    ).stdout
-
-
-print0(nvidia_smi())
-print0("=" * 100)
-
-########################################
-#    Construct model and optimizer     #
-########################################
-
-model: nn.Module = GPT(
-    vocab_size=args.vocab_size,
-    num_layers=16,
-    num_heads=8,
-    model_dim=1024,
-    max_seq_len=max(args.train_seq_len, args.val_seq_len),
-).cuda()
-for m in model.modules():
-    if isinstance(m, nn.Embedding):
-        m.bfloat16()
-
-# collect the parameters to optimize
-hidden_matrix_params = sorted(
-    (p for p in model.blocks.parameters() if p.ndim >= 2),
-    key=lambda x: x.size(),
-    reverse=True,
-)
-embed_params = [*model.embed.parameters(), *model.value_embeds.parameters()]
-scalar_params = [model.scalars]
-head_params: list[nn.Parameter] = [model.lm_head_w]
-# sanity check
-params_collections = [hidden_matrix_params, embed_params, scalar_params, head_params]
-optimized_parameters_set = {p for params in params_collections for p in params}
-assert optimized_parameters_set == {*model.parameters()}
-assert len(optimized_parameters_set) == sum(len(lst) for lst in params_collections)
-
-# init the optimizer(s)
-adam_param_groups = [
-    dict(params=head_params, lr=1 / 320),
-    dict(params=embed_params, lr=0.3),
-    dict(params=scalar_params, lr=0.015),
-]
-# small adam epsilon by @YouJiacheng. this is an alternate method of fixing the world_size dependence
-# discovered by @fernbear.bsky.social https://x.com/hi_tysam/status/1879692937589875094
-optimizer1 = torch.optim.AdamW(
-    adam_param_groups, betas=(0.8, 0.95), eps=1e-10, weight_decay=0.0, fused=True
-)
-optimizer2 = Muon(hidden_matrix_params, lr=0.025, momentum=0.95)
-optimizers: list[torch.optim.Optimizer] = [optimizer1, optimizer2]
-
-
-def opt_params(opt: torch.optim.Optimizer) -> list[nn.Parameter]:
-    return [p for group in opt.param_groups for p in group["params"]]
-
-
-opt2params = {opt: opt_params(opt) for opt in optimizers}
-for opt in optimizers:
-    for group in opt.param_groups:
-        group["initial_lr"] = group["lr"]
-
-
-# learning rate schedule: stable then decay
-def get_lr(step: int):
-    x = step / args.num_iterations  # progress in training
-    assert 0 <= x < 1
-    if x < 1 - args.cooldown_frac:
-        return 1.0
-    else:
-        return (1 - x) / args.cooldown_frac
-
-
-# attention window size schedule: linearly increase
-@lru_cache(1)
-def get_window_size_blocks_helper(window_size: int):
-    return torch.tensor(window_size // 128, dtype=torch.int32, pin_memory=True).cuda(
-        non_blocking=True
+    # begin by printing this file (the Python code)
+    print0(code)
+    print0("=" * 100)
+    # log information about the hardware/software environment this is running on
+    print0(f"Running Python {sys.version}")
+    print0(
+        f"Running PyTorch {torch.version.__version__} compiled for CUDA {torch.version.cuda}"
     )
 
+    def nvidia_smi():
+        import subprocess  # avoid top level import
 
-def get_window_size_blocks(step: int):
-    x = step / args.num_iterations  # progress in training
-    assert 0 <= x <= 1
-    # Linearly increase the block-wise sliding window size over training 128 -> 1792
-    # increase by @fernbear.bsky.social; block-wise by @YouJiacheng
-    factor = 4 * x**3 - 6 * x**2 + 3 * x  # cubic schedule by @jadenj3o
-    window_size = next_multiple_of_n(3456 * factor, n=128)
-    return get_window_size_blocks_helper(window_size)
+        return subprocess.run(
+            ["nvidia-smi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        ).stdout
 
+    print0(nvidia_smi())
+    print0("=" * 100)
 
-model: nn.Module = torch.compile(model, dynamic=False)
+    ########################################
+    #    Construct model and optimizer     #
+    ########################################
 
-########################################
-#            Warmup kernels            #
-########################################
+    model: nn.Module = GPT(
+        vocab_size=args.vocab_size,
+        num_layers=16,
+        num_heads=8,
+        model_dim=1024,
+        max_seq_len=max(args.train_seq_len, args.val_seq_len),
+    ).cuda()
+    for m in model.modules():
+        if isinstance(m, nn.Embedding):
+            m.bfloat16()
 
-# Warmup the training kernels, then re-initialize the state so we aren't cheating
-warmup_steps = 10
-initial_state = copy.deepcopy(
-    dict(model=model.state_dict(), optimizers=[opt.state_dict() for opt in optimizers])
-)
-for _ in range(warmup_steps):
-    inputs = targets = torch.randint(
-        0, args.vocab_size, size=(args.train_seq_len,), device="cuda"
+    # collect the parameters to optimize
+    hidden_matrix_params = sorted(
+        (p for p in model.blocks.parameters() if p.ndim >= 2),
+        key=lambda x: x.size(),
+        reverse=True,
     )
-    model(inputs.to(torch.int32), targets, get_window_size_blocks(0)).backward()
+    embed_params = [*model.embed.parameters(), *model.value_embeds.parameters()]
+    scalar_params = [model.scalars]
+    head_params: list[nn.Parameter] = [model.lm_head_w]
+    # sanity check
+    params_collections = [
+        hidden_matrix_params,
+        embed_params,
+        scalar_params,
+        head_params,
+    ]
+    optimized_parameters_set = {p for params in params_collections for p in params}
+    assert optimized_parameters_set == {*model.parameters()}
+    assert len(optimized_parameters_set) == sum(len(lst) for lst in params_collections)
+
+    # init the optimizer(s)
+    adam_param_groups = [
+        dict(params=head_params, lr=1 / 320),
+        dict(params=embed_params, lr=0.3),
+        dict(params=scalar_params, lr=0.015),
+    ]
+    # small adam epsilon by @YouJiacheng. this is an alternate method of fixing the world_size dependence
+    # discovered by @fernbear.bsky.social https://x.com/hi_tysam/status/1879692937589875094
+    optimizer1 = torch.optim.AdamW(
+        adam_param_groups, betas=(0.8, 0.95), eps=1e-10, weight_decay=0.0, fused=True
+    )
+    optimizer2 = Muon(hidden_matrix_params, lr=0.025, momentum=0.95)
+    optimizers: list[torch.optim.Optimizer] = [optimizer1, optimizer2]
+
+    def opt_params(opt: torch.optim.Optimizer) -> list[nn.Parameter]:
+        return [p for group in opt.param_groups for p in group["params"]]
+
+    opt2params = {opt: opt_params(opt) for opt in optimizers}
     for opt in optimizers:
-        opt.step()
-    model.zero_grad(set_to_none=True)
-model.load_state_dict(initial_state["model"])
-for opt, opt_state in zip(optimizers, initial_state["optimizers"]):
-    opt.load_state_dict(opt_state)
-del initial_state
+        for group in opt.param_groups:
+            group["initial_lr"] = group["lr"]
 
-########################################
-#        Training and validation       #
-########################################
+    # learning rate schedule: stable then decay
+    def get_lr(step: int):
+        x = step / args.num_iterations  # progress in training
+        assert 0 <= x < 1
+        if x < 1 - args.cooldown_frac:
+            return 1.0
+        else:
+            return (1 - x) / args.cooldown_frac
 
-torch.cuda.reset_peak_memory_stats()
-train_loader = data_generator(args.train_files, args.train_seq_len)
-training_time_ms = 0
-# start the clock
-t0 = time.perf_counter()
-# begin training
-grad_accum_steps = args.grad_accum_steps
-train_steps = args.num_iterations * grad_accum_steps
-for step in tqdm(range(train_steps + 1), desc="Training", total=train_steps + 1):
-    last_step = step == train_steps
-    update_step = step // grad_accum_steps
+    # attention window size schedule: linearly increase
+    @lru_cache(1)
+    def get_window_size_blocks_helper(window_size: int):
+        return torch.tensor(
+            window_size // 128, dtype=torch.int32, pin_memory=True
+        ).cuda(non_blocking=True)
 
-    # --------------- VALIDATION SECTION -----------------
-    if last_step or (args.val_loss_every > 0 and step % args.val_loss_every == 0):
-        # stop the clock
-        training_time_ms += 1000 * (time.perf_counter() - t0)
-        model.eval()
-        val_batch_size = args.val_seq_len
-        assert args.val_tokens % val_batch_size == 0
-        val_steps = args.val_tokens // val_batch_size
-        val_loader = data_generator(args.val_files, val_batch_size)
-        val_loss = 0
-        with torch.no_grad():
-            for _ in range(val_steps):
-                inputs, targets = next(val_loader)
-                val_loss += model(inputs, targets, get_window_size_blocks(update_step))
-        val_loss /= val_steps
-        del val_loader
-        print0(
-            f"step:{step}/{train_steps} val_loss:{val_loss:.6f} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms / max(step, 1):.2f}ms",
-            console=True,
+    def get_window_size_blocks(step: int):
+        x = step / args.num_iterations  # progress in training
+        assert 0 <= x <= 1
+        # Linearly increase the block-wise sliding window size over training 128 -> 1792
+        # increase by @fernbear.bsky.social; block-wise by @YouJiacheng
+        factor = 4 * x**3 - 6 * x**2 + 3 * x  # cubic schedule by @jadenj3o
+        window_size = next_multiple_of_n(3456 * factor, n=128)
+        return get_window_size_blocks_helper(window_size)
+
+    model: nn.Module = torch.compile(model, dynamic=False)
+
+    ########################################
+    #            Warmup kernels            #
+    ########################################
+
+    # Warmup the training kernels, then re-initialize the state so we aren't cheating
+    warmup_steps = 10
+    initial_state = copy.deepcopy(
+        dict(
+            model=model.state_dict(),
+            optimizers=[opt.state_dict() for opt in optimizers],
         )
-        model.train()
-        # start the clock again
-        t0 = time.perf_counter()
-
-    if last_step:
-        if args.save_checkpoint:
-            log = dict(
-                step=step,
-                code=code,
-                model=model.state_dict(),
-                optimizers=[opt.state_dict() for opt in optimizers],
-            )
-            os.makedirs(f"logs/{run_id_full}", exist_ok=True)
-            torch.save(log, f"logs/{run_id_full}/state_step{step:06d}.pt")
-            torch.save(log["model"], f"logs/{run_id_full}/latest_model.pt")
-        # the last step only has the validation loop, so break to avoid training
-        break
-
-    # --------------- TRAINING SECTION -----------------
-    inputs, targets = next(train_loader)
-    model(inputs, targets, get_window_size_blocks(update_step)).backward()
-    if step % grad_accum_steps == (grad_accum_steps - 1):
-        # set optimization hyperparameters
-        for opt in optimizers:
-            for group in opt.param_groups:
-                group["lr"] = group["initial_lr"] * get_lr(update_step)
-        for group in optimizer2.param_groups:
-            frac = min(update_step / 300, 1)  # momentum warmup for muon
-            group["momentum"] = (1 - frac) * 0.85 + frac * 0.95
-        # step the optimizers
+    )
+    for _ in range(warmup_steps):
+        inputs = targets = torch.randint(
+            0, args.vocab_size, size=(args.train_seq_len,), device="cuda"
+        )
+        model(inputs.to(torch.int32), targets, get_window_size_blocks(0)).backward()
         for opt in optimizers:
             opt.step()
-        # null the gradients
         model.zero_grad(set_to_none=True)
-        print0(f"grad accum step:{update_step + 1}/{train_steps // grad_accum_steps}")
+    model.load_state_dict(initial_state["model"])
+    for opt, opt_state in zip(optimizers, initial_state["optimizers"]):
+        opt.load_state_dict(opt_state)
+    del initial_state
 
-    # logging
-    approx_training_time_ms = training_time_ms + 1000 * (time.perf_counter() - t0)
+    ########################################
+    #        Training and validation       #
+    ########################################
+
+    torch.cuda.reset_peak_memory_stats()
+    train_loader = data_generator(args.train_files, args.train_seq_len)
+    training_time_ms = 0
+    # start the clock
+    t0 = time.perf_counter()
+    # begin training
+    grad_accum_steps = args.grad_accum_steps
+    train_steps = args.num_iterations * grad_accum_steps
+    for step in tqdm(range(train_steps + 1), desc="Training", total=train_steps + 1):
+        last_step = step == train_steps
+        update_step = step // grad_accum_steps
+
+        # --------------- VALIDATION SECTION -----------------
+        if last_step or (args.val_loss_every > 0 and step % args.val_loss_every == 0):
+            # stop the clock
+            training_time_ms += 1000 * (time.perf_counter() - t0)
+            model.eval()
+            val_batch_size = args.val_seq_len
+            assert args.val_tokens % val_batch_size == 0
+            val_steps = args.val_tokens // val_batch_size
+            val_loader = data_generator(args.val_files, val_batch_size)
+            val_loss = 0
+            with torch.no_grad():
+                for _ in range(val_steps):
+                    inputs, targets = next(val_loader)
+                    val_loss += model(
+                        inputs, targets, get_window_size_blocks(update_step)
+                    )
+            val_loss /= val_steps
+            del val_loader
+            print0(
+                f"step:{step}/{train_steps} val_loss:{val_loss:.6f} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms / max(step, 1):.2f}ms",
+                console=True,
+            )
+            model.train()
+            # start the clock again
+            t0 = time.perf_counter()
+
+        if last_step:
+            if args.save_checkpoint:
+                log = dict(
+                    step=step,
+                    code=code,
+                    model=model.state_dict(),
+                    optimizers=[opt.state_dict() for opt in optimizers],
+                )
+                os.makedirs(f"logs/{run_id_full}", exist_ok=True)
+                torch.save(log, f"logs/{run_id_full}/state_step{step:06d}.pt")
+                torch.save(log["model"], f"logs/{run_id_full}/latest_model.pt")
+            # the last step only has the validation loop, so break to avoid training
+            break
+
+        # --------------- TRAINING SECTION -----------------
+        inputs, targets = next(train_loader)
+        model(inputs, targets, get_window_size_blocks(update_step)).backward()
+        if step % grad_accum_steps == (grad_accum_steps - 1):
+            # set optimization hyperparameters
+            for opt in optimizers:
+                for group in opt.param_groups:
+                    group["lr"] = group["initial_lr"] * get_lr(update_step)
+            for group in optimizer2.param_groups:
+                frac = min(update_step / 300, 1)  # momentum warmup for muon
+                group["momentum"] = (1 - frac) * 0.85 + frac * 0.95
+            # step the optimizers
+            for opt in optimizers:
+                opt.step()
+            # null the gradients
+            model.zero_grad(set_to_none=True)
+            print0(
+                f"grad accum step:{update_step + 1}/{train_steps // grad_accum_steps}"
+            )
+
+        # logging
+        approx_training_time_ms = training_time_ms + 1000 * (time.perf_counter() - t0)
+        print0(
+            f"step:{step + 1}/{train_steps} train_time:{approx_training_time_ms:.0f}ms step_avg:{approx_training_time_ms / (step + 1):.2f}ms",
+        )
+
     print0(
-        f"step:{step + 1}/{train_steps} train_time:{approx_training_time_ms:.0f}ms step_avg:{approx_training_time_ms / (step + 1):.2f}ms",
+        f"peak memory allocated: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB "
+        f"reserved: {torch.cuda.max_memory_reserved() // 1024 // 1024} MiB",
+        console=True,
     )
 
-print0(
-    f"peak memory allocated: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB "
-    f"reserved: {torch.cuda.max_memory_reserved() // 1024 // 1024} MiB",
-    console=True,
-)
+
+if __name__ == "__main__":
+    main()
