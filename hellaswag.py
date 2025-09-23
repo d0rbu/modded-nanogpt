@@ -9,10 +9,10 @@ from lm_eval.models.huggingface import HFLM
 from loguru import logger
 from transformers import (
     AutoTokenizer,
-    CausalLMOutputWithPast,
     PretrainedConfig,
     PreTrainedModel,
 )
+from transformers.modeling_outputs import CausalLMOutputWithPast
 
 from train_gpt_medium import GPT, Hyperparameters, get_window_size_blocks_helper, norm
 
