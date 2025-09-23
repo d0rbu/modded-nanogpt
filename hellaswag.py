@@ -14,7 +14,7 @@ from transformers import (
 )
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
-from train_gpt_medium import GPT, Hyperparameters, get_window_size_blocks_helper, norm
+from train_gpt_medium import GPT, args, get_window_size_blocks_helper, norm
 
 
 class EvaluationGPT(GPT):
@@ -124,15 +124,14 @@ class CustomModel(PreTrainedModel):
 
     def __init__(self, config: CustomConfig, model_path: Path):
         super().__init__(config)
-        hparams = Hyperparameters()
 
-        logger.info(f"Initializing model with hyperparameters: {hparams}")
+        logger.info(f"Initializing model with hyperparameters: {args}")
         self.model = EvaluationGPT(
-            vocab_size=hparams.vocab_size,
+            vocab_size=args.vocab_size,
             num_layers=16,
             num_heads=8,
             model_dim=1024,
-            max_seq_len=max(hparams.train_seq_len, hparams.val_seq_len),
+            max_seq_len=max(args.train_seq_len, args.val_seq_len),
         )
 
         logger.info(f"Loading model state dict from {model_path}")

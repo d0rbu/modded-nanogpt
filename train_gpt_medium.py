@@ -550,9 +550,38 @@ class Hyperparameters:
     save_checkpoint = True
 
 
-def main():
-    args = Hyperparameters()
+args = Hyperparameters()
 
+
+# learning rate schedule: stable then decay
+def get_lr(step: int):
+    x = step / args.num_iterations  # progress in training
+    assert 0 <= x < 1
+    if x < 1 - args.cooldown_frac:
+        return 1.0
+    else:
+        return (1 - x) / args.cooldown_frac
+
+
+# attention window size schedule: linearly increase
+@lru_cache(1)
+def get_window_size_blocks_helper(window_size: int):
+    return torch.tensor(window_size // 128, dtype=torch.int32, pin_memory=True).cuda(
+        non_blocking=True
+    )
+
+
+def get_window_size_blocks(step: int):
+    x = step / args.num_iterations  # progress in training
+    assert 0 <= x <= 1
+    # Linearly increase the block-wise sliding window size over training 128 -> 1792
+    # increase by @fernbear.bsky.social; block-wise by @YouJiacheng
+    factor = 4 * x**3 - 6 * x**2 + 3 * x  # cubic schedule by @jadenj3o
+    window_size = next_multiple_of_n(3456 * factor, n=128)
+    return get_window_size_blocks_helper(window_size)
+
+
+def main():
     run_id = int(os.environ.get("RUN_ID", 0))
     # Single GPU setup
     assert torch.cuda.is_available()
@@ -655,31 +684,6 @@ def main():
     for opt in optimizers:
         for group in opt.param_groups:
             group["initial_lr"] = group["lr"]
-
-    # learning rate schedule: stable then decay
-    def get_lr(step: int):
-        x = step / args.num_iterations  # progress in training
-        assert 0 <= x < 1
-        if x < 1 - args.cooldown_frac:
-            return 1.0
-        else:
-            return (1 - x) / args.cooldown_frac
-
-    # attention window size schedule: linearly increase
-    @lru_cache(1)
-    def get_window_size_blocks_helper(window_size: int):
-        return torch.tensor(
-            window_size // 128, dtype=torch.int32, pin_memory=True
-        ).cuda(non_blocking=True)
-
-    def get_window_size_blocks(step: int):
-        x = step / args.num_iterations  # progress in training
-        assert 0 <= x <= 1
-        # Linearly increase the block-wise sliding window size over training 128 -> 1792
-        # increase by @fernbear.bsky.social; block-wise by @YouJiacheng
-        factor = 4 * x**3 - 6 * x**2 + 3 * x  # cubic schedule by @jadenj3o
-        window_size = next_multiple_of_n(3456 * factor, n=128)
-        return get_window_size_blocks_helper(window_size)
 
     model: nn.Module = torch.compile(model, dynamic=False)
 
