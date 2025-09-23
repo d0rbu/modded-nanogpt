@@ -138,12 +138,15 @@ class CustomModel(PreTrainedModel):
         model_state_dict = th.load(model_path)
 
         logger.info("Renaming keys in model state dict")
-        for key in model_state_dict:
-            if key.startswith("_orig_mod."):
-                model_state_dict[key.replace("_orig_mod.", "")] = model_state_dict[key]
-            del model_state_dict[key]
+        renamed_model_state_dict = {
+            key.replace("_orig_mod.", ""): value
+            for key, value in model_state_dict.items()
+            if key.startswith("_orig_mod.")
+        }
 
-        self.model.load_state_dict(model_state_dict)
+        self.model.load_state_dict(renamed_model_state_dict)
+
+        del model_state_dict, renamed_model_state_dict
 
         logger.info("Initializing tokenizer")
         self.tokenizer = AutoTokenizer.from_pretrained("gpt2")
