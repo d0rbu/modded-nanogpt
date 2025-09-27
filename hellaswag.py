@@ -15,11 +15,7 @@ from loguru import logger
 
 logger.info("importing transformers...")
 
-from transformers import (
-    AutoTokenizer,
-    PretrainedConfig,
-    PreTrainedModel,
-)
+from transformers import AutoTokenizer, PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 logger.info("importing train_gpt_medium...")
@@ -191,6 +187,11 @@ class CustomModel(PreTrainedModel):
 
 @arguably.command()
 def main(logs_dirpath: str = "logs"):
+    # Single GPU setup
+    assert th.cuda.is_available()
+    device = th.device("cuda", 0)
+    th.cuda.set_device(device)
+
     logger.info(f"Evaluating logs in {logs_dirpath}")
     logs_dir = Path(logs_dirpath)
 
