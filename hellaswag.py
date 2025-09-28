@@ -37,7 +37,16 @@ class EvaluationGPT(GPT):
         assert labels is None or labels.ndim == 2
 
         input_ids_with_eos_separators = th.cat(
-            [input_ids, th.full((input_ids.shape[0], 1), 50256)], dim=1
+            [
+                input_ids,
+                th.full(
+                    (input_ids.shape[0], 1),
+                    50256,
+                    device=input_ids.device,
+                    dtype=input_ids.dtype,
+                ),
+            ],
+            dim=1,
         )
 
         del input_ids
