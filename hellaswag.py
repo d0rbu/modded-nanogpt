@@ -59,7 +59,16 @@ class EvaluationGPT(GPT):
         padding_len = padded_len - unpadded_len
 
         input_ids_flat = th.cat(
-            [input_ids_flat_unpadded, th.full((padding_len,), 50256)], dim=0
+            [
+                input_ids_flat_unpadded,
+                th.full(
+                    (padding_len,),
+                    50256,
+                    device=input_ids_flat_unpadded.device,
+                    dtype=input_ids_flat_unpadded.dtype,
+                ),
+            ],
+            dim=0,
         )
 
         del input_ids_flat_unpadded
