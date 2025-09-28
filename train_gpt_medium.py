@@ -349,7 +349,7 @@ class GPT(nn.Module):
 
     def create_blockmasks(self, input_seq: Tensor, sliding_window_num_blocks: Tensor):
         BLOCK_SIZE = 128
-        docs = (input_seq == 50256).cumsum(0).to(device="cuda")
+        docs = (input_seq == 50256).cumsum(0)
 
         def document_causal(b, h, q_idx, kv_idx):
             causal_mask = q_idx >= kv_idx

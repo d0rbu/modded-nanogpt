@@ -182,7 +182,9 @@ class CustomModel(PreTrainedModel):
         self.tokenizer = AutoTokenizer.from_pretrained("gpt2")
 
     def forward(self, input_ids: th.Tensor, labels: th.Tensor | None = None):
-        return self.model(input_ids, labels)
+        inputs_on_cuda_bf16 = input_ids.to(device="cuda", dtype=th.bfloat16)
+
+        return self.model(inputs_on_cuda_bf16, labels)
 
 
 @arguably.command()
