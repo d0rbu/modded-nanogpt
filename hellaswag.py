@@ -39,6 +39,12 @@ class EvaluationGPT(GPT):
             logger.warning(f"Input IDs dtype is {input_ids.dtype}, converting to int32")
             input_ids = input_ids.to(dtype=th.int32)
 
+        if input_ids.device != self.device:
+            logger.warning(
+                f"Input IDs device is {input_ids.device}, converting to {self.device}"
+            )
+            input_ids = input_ids.to(device=self.device)
+
         input_ids_with_eos_separators = th.cat(
             [
                 input_ids,
@@ -203,9 +209,7 @@ class CustomModel(PreTrainedModel):
         self.tokenizer = AutoTokenizer.from_pretrained("gpt2")
 
     def forward(self, input_ids: th.Tensor, labels: th.Tensor | None = None):
-        inputs_on_cuda_bf16 = input_ids.to(device="cuda", dtype=th.bfloat16)
-
-        return self.model(inputs_on_cuda_bf16, labels)
+        return self.model(input_ids, labels)
 
 
 @arguably.command()
