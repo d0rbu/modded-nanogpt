@@ -582,6 +582,8 @@ def get_window_size_blocks(step: int):
 
 
 def main():
+    start_time = time.time()
+
     run_id = int(os.environ.get("RUN_ID", 0))
     # Single GPU setup
     assert torch.cuda.is_available()
@@ -627,6 +629,7 @@ def main():
 
     print0(nvidia_smi())
     print0("=" * 100)
+    print0(f"Start time: {start_time}")
 
     ########################################
     #    Construct model and optimizer     #
@@ -677,10 +680,6 @@ def main():
     optimizer2 = Muon(hidden_matrix_params, lr=0.025, momentum=0.95)
     optimizers: list[torch.optim.Optimizer] = [optimizer1, optimizer2]
 
-    def opt_params(opt: torch.optim.Optimizer) -> list[nn.Parameter]:
-        return [p for group in opt.param_groups for p in group["params"]]
-
-    opt2params = {opt: opt_params(opt) for opt in optimizers}
     for opt in optimizers:
         for group in opt.param_groups:
             group["initial_lr"] = group["lr"]
@@ -793,10 +792,13 @@ def main():
         print0(
             f"step:{step + 1}/{train_steps} train_time:{approx_training_time_ms:.0f}ms step_avg:{approx_training_time_ms / (step + 1):.2f}ms",
         )
+    end_time = time.time()
 
     print0(
         f"peak memory allocated: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB "
         f"reserved: {torch.cuda.max_memory_reserved() // 1024 // 1024} MiB",
+        f"end time: {end_time}",
+        f"total training time: {end_time - start_time / 60:.2f}m ({end_time - start_time / 60 / 60:.2f}h)",
         console=True,
     )
 

@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 print("importing torch...")
@@ -219,6 +220,8 @@ def main(logs_dirpath: str = "logs"):
     device = th.device("cuda", 0)
     th.cuda.set_device(device)
 
+    start_time = time.time()
+
     logger.info(f"Evaluating logs in {logs_dirpath}")
     logs_dir = Path(logs_dirpath)
 
@@ -245,6 +248,9 @@ def main(logs_dirpath: str = "logs"):
     logger.info(f"Saving results to {run_dirpath / 'hellaswag.yaml'}")
     with open(run_dirpath / "hellaswag.yaml", "w") as f:
         yaml.dump(results, f)
+
+    end_time = time.time()
+    logger.info(f"Total evaluation time: {end_time - start_time:.2f}s")
 
     logger.success("hooray :D")
 

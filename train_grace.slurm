@@ -2,7 +2,7 @@
 
 ##NECESSARY JOB SPECIFICATIONS  
 #SBATCH --job-name=modded-nanogpt       # Set the job name to "get_activations"
-#SBATCH --time=24:00:00                 # Set the wall clock limit to 24 hours
+#SBATCH --time=25:00:00                 # Set the wall clock limit to 25 hours
 #SBATCH --ntasks=1                      # Total number of tasks (processes) across all nodes
 #SBATCH --ntasks-per-node=1             # Number of tasks per node
 #SBATCH --mem=16G                       # Request 16GB per node
