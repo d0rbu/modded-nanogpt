@@ -35,6 +35,7 @@ class EvaluationGPT(GPT):
     ) -> CausalLMOutputWithPast:
         assert input_ids.ndim == 2
         assert labels is None or labels.ndim == 2
+        assert input_ids.dtype in (th.int32, th.int64)
 
         input_ids_with_eos_separators = th.cat(
             [
