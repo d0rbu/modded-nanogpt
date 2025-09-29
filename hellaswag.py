@@ -35,7 +35,9 @@ class EvaluationGPT(GPT):
     ) -> CausalLMOutputWithPast:
         assert input_ids.ndim == 2
         assert labels is None or labels.ndim == 2
-        assert input_ids.dtype in (th.int32, th.int64)
+        if input_ids.dtype not in (th.int32, th.int64):
+            logger.warning(f"Input IDs dtype is {input_ids.dtype}, converting to int32")
+            input_ids = input_ids.to(dtype=th.int32)
 
         input_ids_with_eos_separators = th.cat(
             [
