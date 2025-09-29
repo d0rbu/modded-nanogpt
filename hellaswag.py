@@ -39,11 +39,11 @@ class EvaluationGPT(GPT):
             logger.warning(f"Input IDs dtype is {input_ids.dtype}, converting to int32")
             input_ids = input_ids.to(dtype=th.int32)
 
-        if input_ids.device != self.embed.device:
+        if input_ids.device != self.embed.weight.device:
             logger.warning(
-                f"Input IDs device is {input_ids.device}, converting to {self.embed.device}"
+                f"Input IDs device is {input_ids.device}, converting to {self.embed.weight.device}"
             )
-            input_ids = input_ids.to(device=self.embed.device)
+            input_ids = input_ids.to(device=self.embed.weight.device)
 
         input_ids_with_eos_separators = th.cat(
             [
