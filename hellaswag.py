@@ -63,7 +63,9 @@ class EvaluationGPT(GPT):
 
         num_samples = input_ids_with_eos_separators.shape[0]
 
-        input_ids_flat_unpadded = input_ids_with_eos_separators.flatten()
+        input_ids_flat_unpadded = input_ids_with_eos_separators.flatten().to(
+            device=self.embed.weight.device
+        )
         unpadded_len = input_ids_flat_unpadded.shape[0]
         padded_len = next_multiple_of_n(unpadded_len, n=128)
         padding_len = padded_len - unpadded_len
@@ -239,7 +241,7 @@ def main(logs_dirpath: str = "logs"):
     assert model_path.exists(), f"Model path {model_path} does not exist"
 
     logger.info(f"Loading model from {model_path}")
-    model = CustomModel(CustomConfig(), model_path)
+    model = CustomModel(CustomConfig(), model_path).to(device)
     logger.info("Wrapping model in HFLM")
     wrapped_model = HFLM(pretrained=model, tokenizer=model.tokenizer)
 
