@@ -3,11 +3,12 @@ from pathlib import Path
 
 print("importing torch...")
 
+import json
+
 import arguably
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
-import yaml
 
 print("importing lm_eval...")
 
@@ -256,9 +257,10 @@ def main(logs_dirpath: str = "logs"):
     results = evaluator.simple_evaluate(
         model=wrapped_model, tasks=["hellaswag"], verbosity="DEBUG"
     )
-    logger.info(f"Saving results to {run_dirpath / 'hellaswag.yaml'}")
-    with open(run_dirpath / "hellaswag.yaml", "w") as f:
-        yaml.dump(results, f)
+    logger.info(results)
+    logger.info(f"Saving results to {run_dirpath / 'hellaswag.json'}")
+    with open(run_dirpath / "hellaswag.json", "w") as f:
+        json.dump(results, f)
 
     end_time = time.time()
     logger.info(f"Total evaluation time: {end_time - start_time:.2f}s")
