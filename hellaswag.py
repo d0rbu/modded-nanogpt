@@ -146,7 +146,9 @@ class EvaluationGPT(GPT):
         x = norm(x)
 
         unpadded_outputs = x[:, :unpadded_len]
-        unrolled_outputs = unpadded_outputs.view(*input_ids_with_eos_separators, -1)
+        unrolled_outputs = unpadded_outputs.view(
+            *input_ids_with_eos_separators.shape, -1
+        )
         outputs = unrolled_outputs[:, :-1]
 
         loss = None
