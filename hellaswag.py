@@ -244,7 +244,9 @@ def main(logs_dirpath: str = "logs"):
     wrapped_model = HFLM(pretrained=model, tokenizer=model.tokenizer)
 
     logger.info("Evaluating model")
-    results = evaluator.simple_evaluate(model=wrapped_model, tasks=["hellaswag"])
+    results = evaluator.simple_evaluate(
+        model=wrapped_model, tasks=["hellaswag"], verbosity="DEBUG"
+    )
     logger.info(f"Saving results to {run_dirpath / 'hellaswag.yaml'}")
     with open(run_dirpath / "hellaswag.yaml", "w") as f:
         yaml.dump(results, f)
