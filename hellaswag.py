@@ -5,6 +5,7 @@ print("importing torch...")
 
 import arguably
 import torch as th
+import torch.nn as nn
 import torch.nn.functional as F
 import yaml
 
@@ -242,8 +243,12 @@ def main(logs_dirpath: str = "logs"):
 
     logger.info(f"Loading model from {model_path}")
     model = CustomModel(CustomConfig(), model_path).to(device)
+
     logger.info("Wrapping model in HFLM")
     wrapped_model = HFLM(pretrained=model, tokenizer=model.tokenizer)
+    for m in model.modules():
+        if isinstance(m, nn.Embedding):
+            m.bfloat16()
 
     logger.info("Evaluating model")
     results = evaluator.simple_evaluate(
