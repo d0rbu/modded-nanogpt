@@ -260,7 +260,7 @@ def main(logs_dirpath: str = "logs"):
     logger.info(results)
     logger.info(f"Saving results to {run_dirpath / 'hellaswag.json'}")
     with open(run_dirpath / "hellaswag.json", "w") as f:
-        json.dump(results, f)
+        json.dump(results, f, default=str)
 
     end_time = time.time()
     logger.info(f"Total evaluation time: {end_time - start_time:.2f}s")
