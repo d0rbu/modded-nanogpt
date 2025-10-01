@@ -1,1 +1,1 @@
-uv run torchrun --standalone --nproc_per_node=1 train_gpt_medium.py
+uv run train_gpt_medium.py

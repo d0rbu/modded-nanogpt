@@ -43,5 +43,4 @@ echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
 cd ~/modded-nanogpt
 
 # Run the non-distributed job
-./run.sh
-./eval.sh
+./run.sh && ./eval.sh
