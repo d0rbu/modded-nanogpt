@@ -219,6 +219,29 @@ class CustomModel(PreTrainedModel):
         return self.model(input_ids, labels)
 
 
+def convert_to_serializable(obj):
+    """Convert PyTorch objects to JSON/YAML serializable types."""
+    import numpy as np
+    
+    if isinstance(obj, th.Tensor):
+        return obj.item() if obj.numel() == 1 else obj.tolist()
+    elif isinstance(obj, (th.dtype, type(th.float32))):
+        return str(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {key: convert_to_serializable(value) for key, value in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [convert_to_serializable(item) for item in obj]
+    elif hasattr(obj, '__dict__'):
+        try:
+            return {key: convert_to_serializable(value) for key, value in obj.__dict__.items()}
+        except:
+            return str(obj)
+    else:
+        return obj
+
+
 @arguably.command()
 def main(logs_dirpath: str = "logs"):
     # Single GPU setup
@@ -264,8 +287,7 @@ def main(logs_dirpath: str = "logs"):
 
     end_time = time.time()
     logger.info(f"Total evaluation time: {end_time - start_time:.2f}s")
-
-    logger.success("hooray :D")
+    logger.success(f"Final accuracy: {results['hellaswag']['acc,none']}")
 
 
 if __name__ == "__main__":
