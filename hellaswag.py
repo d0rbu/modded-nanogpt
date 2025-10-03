@@ -1,9 +1,10 @@
+import sys
 import time
 from pathlib import Path
 
-print("importing torch...")
+import yaml
 
-import json
+print("importing torch...")
 
 import arguably
 import torch as th
@@ -123,6 +124,9 @@ class EvaluationGPT(GPT):
         ]
         assert len(block_masks) == len(self.blocks)
 
+        logger.debug(long_bm)
+        logger.debug(short_bm)
+
         x = x0 = norm(
             self.embed(input_ids_flat)[None]
         )  # use of norm here by @Grad62304977
@@ -160,10 +164,15 @@ class EvaluationGPT(GPT):
                     outputs.flatten(end_dim=1).chunk(num_samples)[i],
                     self.lm_head_w.bfloat16(),
                 ).float()
+
+                targets_padded = labels_flat.chunk(num_samples)[i]
+                # -100 where we have the padding token
+                targets = targets_padded.masked_fill(targets_padded == 50256, -100)
+
                 loss += (
                     F.cross_entropy(
                         15 * logits * th.rsqrt(logits.square() + 225),
-                        labels_flat.chunk(num_samples)[i],
+                        targets,
                     )
                     / num_samples
                 )
@@ -219,31 +228,11 @@ class CustomModel(PreTrainedModel):
         return self.model(input_ids, labels)
 
 
-def convert_to_serializable(obj):
-    """Convert PyTorch objects to JSON/YAML serializable types."""
-    import numpy as np
-    
-    if isinstance(obj, th.Tensor):
-        return obj.item() if obj.numel() == 1 else obj.tolist()
-    elif isinstance(obj, (th.dtype, type(th.float32))):
-        return str(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    elif isinstance(obj, dict):
-        return {key: convert_to_serializable(value) for key, value in obj.items()}
-    elif isinstance(obj, (list, tuple)):
-        return [convert_to_serializable(item) for item in obj]
-    elif hasattr(obj, '__dict__'):
-        try:
-            return {key: convert_to_serializable(value) for key, value in obj.__dict__.items()}
-        except:
-            return str(obj)
-    else:
-        return obj
-
-
 @arguably.command()
-def main(logs_dirpath: str = "logs"):
+def main(logs_dirpath: str = "logs", log_level: str = "INFO"):
+    logger.remove()
+    logger.add(sys.stderr, level=log_level)
+
     # Single GPU setup
     assert th.cuda.is_available()
     device = th.device("cuda", 0)
@@ -277,17 +266,18 @@ def main(logs_dirpath: str = "logs"):
             m.bfloat16()
 
     logger.info("Evaluating model")
-    results = evaluator.simple_evaluate(
+    results_raw = evaluator.simple_evaluate(
         model=wrapped_model, tasks=["hellaswag"], verbosity="DEBUG"
     )
+    results = results_raw["results"]["hellaswag"]
     logger.info(results)
     logger.info(f"Saving results to {run_dirpath / 'hellaswag.json'}")
-    with open(run_dirpath / "hellaswag.json", "w") as f:
-        json.dump(results, f, default=str)
+    with open(run_dirpath / "hellaswag.yaml", "w") as f:
+        yaml.dump(results, f)
 
     end_time = time.time()
     logger.info(f"Total evaluation time: {end_time - start_time:.2f}s")
-    logger.success(f"Final accuracy: {results['hellaswag']['acc,none']}")
+    logger.success(f"Final accuracy: {results['acc,none']}")
 
 
 if __name__ == "__main__":
