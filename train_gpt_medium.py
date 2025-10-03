@@ -796,8 +796,8 @@ def main():
 
     print0(
         f"peak memory allocated: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB "
-        f"reserved: {torch.cuda.max_memory_reserved() // 1024 // 1024} MiB",
-        f"end time: {end_time}",
+        f"reserved: {torch.cuda.max_memory_reserved() // 1024 // 1024} MiB"
+        f"end time: {end_time}"
         f"total training time: {end_time - start_time / 60:.2f}m ({end_time - start_time / 60 / 60:.2f}h)",
         console=True,
     )

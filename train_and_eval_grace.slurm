@@ -5,7 +5,8 @@
 #SBATCH --time=26:00:00                      # Set the wall clock limit to 26 hours
 #SBATCH --ntasks=1                           # Total number of tasks (processes) across all nodes
 #SBATCH --ntasks-per-node=1                  # Number of tasks per node
-#SBATCH --mem=16G                            # Request 16GB per node
+#SBATCH --cpus-per-task=8                    # Number of CPUs per task
+#SBATCH --mem=32G                            # Request 16GB per node
 #SBATCH --output=modded-nanogpt-train.%j     # Send stdout/err to "modded-nanogpt-train.[jobID]"
 #SBATCH --error=modded-nanogpt-train.%j.err  # Send stderr to separate file
 #SBATCH --gres=gpu:a100:1                    # Request 1 a100 per node
