@@ -1,1 +1,1 @@
-uv run hellaswag.py --log-level DEBUG
+uv run hellaswag.py logs DEBUG
