@@ -124,8 +124,8 @@ class EvaluationGPT(GPT):
         ]
         assert len(block_masks) == len(self.blocks)
 
-        logger.debug(long_bm)
-        logger.debug(short_bm)
+        logger.debug(long_bm.to_string())
+        logger.debug(short_bm.to_string())
 
         x = x0 = norm(
             self.embed(input_ids_flat)[None]
