@@ -101,9 +101,6 @@ class EvaluationGPT(GPT):
 
         sliding_window_num_blocks = get_window_size_blocks_helper(3584)
 
-        docs = (input_ids_flat == 50256).cumsum(0)
-        logger.debug(docs)
-        logger.debug((input_ids_flat == 50256).sum())
         long_bm, short_bm = self.create_blockmasks(
             input_ids_flat, sliding_window_num_blocks
         )
@@ -232,7 +229,7 @@ class CustomModel(PreTrainedModel):
 
 
 @arguably.command()
-def main(logs_dirpath: str = "logs", log_level: str = "INFO"):
+def main(logs_dirpath: str = "logs", log_level: str = "INFO", limit: int | None = None):
     logger.remove()
     logger.add(sys.stderr, level=log_level)
 
@@ -270,7 +267,7 @@ def main(logs_dirpath: str = "logs", log_level: str = "INFO"):
 
     logger.info("Evaluating model")
     results_raw = evaluator.simple_evaluate(
-        model=wrapped_model, tasks=["hellaswag"], verbosity="DEBUG"
+        model=wrapped_model, tasks=["hellaswag"], limit=limit, verbosity="DEBUG"
     )
     results = results_raw["results"]["hellaswag"]
     logger.info(results)
