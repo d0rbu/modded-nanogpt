@@ -101,6 +101,9 @@ class EvaluationGPT(GPT):
 
         sliding_window_num_blocks = get_window_size_blocks_helper(3584)
 
+        docs = (input_ids_flat == 50256).cumsum(0)
+        logger.debug(docs)
+        logger.debug((input_ids_flat == 50256).sum())
         long_bm, short_bm = self.create_blockmasks(
             input_ids_flat, sliding_window_num_blocks
         )
