@@ -738,10 +738,13 @@ def main():
     for step in tqdm(range(train_steps + 1), desc="Training", total=train_steps + 1):
         last_step = step == train_steps
         update_step = step // grad_accum_steps
+        grad_accum_step = step % grad_accum_steps
 
         # --------------- VALIDATION SECTION -----------------
         if last_step or (
-            args.val_loss_every > 0 and update_step % args.val_loss_every == 0
+            args.val_loss_every > 0
+            and update_step % args.val_loss_every == 0
+            and grad_accum_step == 0
         ):
             # stop the clock
             training_time_ms += 1000 * (time.perf_counter() - t0)
