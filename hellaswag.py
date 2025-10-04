@@ -51,13 +51,13 @@ class EvaluationGPT(GPT):
 
         input_ids_with_eos_separators = th.cat(
             [
-                input_ids,
                 th.full(
                     (input_ids.shape[0], 1),
                     50256,
                     device=input_ids.device,
                     dtype=input_ids.dtype,
                 ),
+                input_ids,
             ],
             dim=1,
         )
@@ -154,7 +154,7 @@ class EvaluationGPT(GPT):
         unrolled_outputs = unpadded_outputs.view(
             *input_ids_with_eos_separators.shape, -1
         )
-        outputs = unrolled_outputs[:, :-1]
+        outputs = unrolled_outputs[:, 1:]
 
         loss = None
         if labels_flat is not None:

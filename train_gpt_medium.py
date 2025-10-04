@@ -531,14 +531,14 @@ class Hyperparameters:
     val_files = (
         "data/fineweb10B/fineweb_val_*.bin"  # input .bin to eval validation loss on
     )
-    train_seq_len = 64 * 1024  # FlexAttention sequence length
+    train_seq_len = 42 * 1024  # FlexAttention sequence length
     val_tokens = (
-        40 * 4 * 64 * 1024
+        40 * 4 * 42 * 1024
     )  # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
-    val_seq_len = 4 * 64 * 1024  # FlexAttention sequence length for validation
+    val_seq_len = 4 * 42 * 1024  # FlexAttention sequence length for validation
     # optimization
     grad_accum_steps = 8
-    num_iterations = 5960  # number of iterations to run
+    num_iterations = 9000  # number of iterations to run
     cooldown_frac = 0.7  # fraction of training spent cooling down the learning rate
     # architecture
     vocab_size = 50257
@@ -723,6 +723,17 @@ def main():
     # begin training
     grad_accum_steps = args.grad_accum_steps
     train_steps = args.num_iterations * grad_accum_steps
+
+    # Log initial hyperparameters for observability
+    initial_lr = optimizers[0].param_groups[0]["initial_lr"]  # AdamW initial lr
+    initial_muon_lr = optimizer2.param_groups[0]["initial_lr"]  # Muon initial lr
+    initial_window_size = get_window_size_blocks(0)
+    print0(
+        f"INITIAL - adam_initial_lr:{initial_lr:.6f} muon_initial_lr:{initial_muon_lr:.6f} "
+        f"initial_window_size_blocks:{initial_window_size.item()} grad_accum_steps:{grad_accum_steps} "
+        f"total_train_steps:{train_steps} total_update_steps:{args.num_iterations}"
+    )
+
     for step in tqdm(range(train_steps + 1), desc="Training", total=train_steps + 1):
         last_step = step == train_steps
         update_step = step // grad_accum_steps
@@ -731,6 +742,19 @@ def main():
         if last_step or (args.val_loss_every > 0 and step % args.val_loss_every == 0):
             # stop the clock
             training_time_ms += 1000 * (time.perf_counter() - t0)
+
+            # Log validation hyperparameters for observability
+            current_lr = optimizers[0].param_groups[0]["lr"]  # AdamW lr
+            muon_lr = optimizer2.param_groups[0]["lr"]  # Muon lr
+            muon_momentum = optimizer2.param_groups[0]["momentum"]
+            window_size = get_window_size_blocks(update_step)
+            print0(
+                f"VALIDATION - step:{step} update_step:{update_step} "
+                f"adam_lr:{current_lr:.6f} muon_lr:{muon_lr:.6f} "
+                f"muon_momentum:{muon_momentum:.4f} window_size_blocks:{window_size.item()} "
+                f"progress:{update_step / args.num_iterations:.4f}"
+            )
+
             model.eval()
             val_batch_size = args.val_seq_len
             assert args.val_tokens % val_batch_size == 0
@@ -778,6 +802,18 @@ def main():
             for group in optimizer2.param_groups:
                 frac = min(update_step / 300, 1)  # momentum warmup for muon
                 group["momentum"] = (1 - frac) * 0.85 + frac * 0.95
+
+            # Log current hyperparameters for observability
+            current_lr = optimizers[0].param_groups[0]["lr"]  # AdamW lr
+            muon_lr = optimizer2.param_groups[0]["lr"]  # Muon lr
+            muon_momentum = optimizer2.param_groups[0]["momentum"]
+            window_size = get_window_size_blocks(update_step)
+            print0(
+                f"step:{step} update_step:{update_step} "
+                f"adam_lr:{current_lr:.6f} muon_lr:{muon_lr:.6f} "
+                f"muon_momentum:{muon_momentum:.4f} window_size_blocks:{window_size.item()} "
+                f"progress:{update_step / args.num_iterations:.4f}"
+            )
             # step the optimizers
             for opt in optimizers:
                 opt.step()
