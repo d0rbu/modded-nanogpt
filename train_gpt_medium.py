@@ -537,15 +537,14 @@ class Hyperparameters:
     )  # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
     val_seq_len = 4 * 42 * 1024  # FlexAttention sequence length for validation
     # optimization
-    grad_accum_steps = 8
-    num_iterations = 9000  # number of iterations to run
+    grad_accum_steps = 12
+    num_iterations = 5960  # number of iterations to run
     cooldown_frac = 0.7  # fraction of training spent cooling down the learning rate
     # architecture
     vocab_size = 50257
     # evaluation and logging
     val_loss_every = (
-        grad_accum_steps
-        * 16  # every how many steps to evaluate val loss? 0 for only at the end
+        125  # every how many steps to evaluate val loss? 0 for only at the end
     )
     save_checkpoint = True
 
@@ -739,7 +738,9 @@ def main():
         update_step = step // grad_accum_steps
 
         # --------------- VALIDATION SECTION -----------------
-        if last_step or (args.val_loss_every > 0 and step % args.val_loss_every == 0):
+        if last_step or (
+            args.val_loss_every > 0 and update_step % args.val_loss_every == 0
+        ):
             # stop the clock
             training_time_ms += 1000 * (time.perf_counter() - t0)
 
@@ -770,7 +771,7 @@ def main():
             val_loss /= val_steps
             del val_loader
             print0(
-                f"step:{step}/{train_steps} val_loss:{val_loss:.6f} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms / max(step, 1):.2f}ms",
+                f"step:{update_step}/{args.num_iterations} val_loss:{val_loss:.6f} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms / max(step, 1):.2f}ms",
                 console=True,
             )
             model.train()
