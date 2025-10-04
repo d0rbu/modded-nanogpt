@@ -800,6 +800,7 @@ def main():
         # --------------- TRAINING SECTION -----------------
         inputs, targets = next(train_loader)
         loss = model(inputs, targets, get_window_size_blocks(update_step))
+        loss /= args.grad_accum_steps
         loss.backward()
         if grad_accum_step == (grad_accum_steps - 1):
             # set optimization hyperparameters
