@@ -804,8 +804,7 @@ def main():
         # --------------- TRAINING SECTION -----------------
         inputs, targets = next(train_loader)
         loss = model(inputs, targets, get_window_size_blocks(update_step))
-        loss = loss / (grad_accum_steps**2)
-        loss.backward()
+        scaler.scale(loss).backward()
         if grad_accum_step == (grad_accum_steps - 1):
             # set optimization hyperparameters
             for opt in optimizers:
@@ -828,7 +827,8 @@ def main():
             )
             # step the optimizers
             for opt in optimizers:
-                opt.step()
+                scaler.step(opt)
+            scaler.update()
             # null the gradients
             model.zero_grad(set_to_none=True)
             print0(
