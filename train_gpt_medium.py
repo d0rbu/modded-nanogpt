@@ -727,6 +727,8 @@ def main():
     grad_accum_steps = args.grad_accum_steps
     train_steps = args.num_iterations * grad_accum_steps
 
+    scaler = torch.amp.GradScaler("cuda")
+
     # Log initial hyperparameters for observability
     initial_lr = optimizers[0].param_groups[0]["initial_lr"]  # AdamW initial lr
     initial_muon_lr = optimizer2.param_groups[0]["initial_lr"]  # Muon initial lr
@@ -802,7 +804,7 @@ def main():
         # --------------- TRAINING SECTION -----------------
         inputs, targets = next(train_loader)
         loss = model(inputs, targets, get_window_size_blocks(update_step))
-        loss = loss / grad_accum_steps
+        loss = loss / (grad_accum_steps**2)
         loss.backward()
         if grad_accum_step == (grad_accum_steps - 1):
             # set optimization hyperparameters
