@@ -315,6 +315,7 @@ class GPT(nn.Module):
         num_heads: int,
         model_dim: int,
         max_seq_len: int,
+        use_normal_loss: bool = False,
     ):
         super().__init__()
         self.embed = nn.Embedding(vocab_size, model_dim)
@@ -346,6 +347,7 @@ class GPT(nn.Module):
                 ]
             )
         )
+        self.use_normal_loss = use_normal_loss
 
     def create_blockmasks(self, input_seq: Tensor, sliding_window_num_blocks: Tensor):
         BLOCK_SIZE = 128
@@ -459,7 +461,7 @@ class GPT(nn.Module):
             skip_connections.append(x)
 
         x = norm(x)
-        if self.training:
+        if self.training or self.use_normal_loss:
             logits: Tensor = F.linear(
                 x.flatten(end_dim=1), self.lm_head_w.bfloat16()
             ).float()
@@ -544,7 +546,7 @@ class Hyperparameters:
     vocab_size = 50257
     # evaluation and logging
     val_loss_every = (
-        125  # every how many steps to evaluate val loss? 0 for only at the end
+        16  # every how many steps to evaluate val loss? 0 for only at the end
     )
     save_checkpoint = True
 
@@ -800,7 +802,7 @@ def main():
         # --------------- TRAINING SECTION -----------------
         inputs, targets = next(train_loader)
         loss = model(inputs, targets, get_window_size_blocks(update_step))
-        loss /= args.grad_accum_steps
+        loss = loss / grad_accum_steps
         loss.backward()
         if grad_accum_step == (grad_accum_steps - 1):
             # set optimization hyperparameters

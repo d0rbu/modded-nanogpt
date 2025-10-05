@@ -205,6 +205,7 @@ class CustomModel(PreTrainedModel):
             num_heads=8,
             model_dim=1024,
             max_seq_len=max(args.train_seq_len, args.val_seq_len),
+            use_normal_loss=True,
         )
 
         logger.info(f"Loading model state dict from {model_path}")
