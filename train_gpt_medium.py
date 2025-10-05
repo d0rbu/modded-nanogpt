@@ -656,6 +656,7 @@ def main():
     embed_params = [*model.embed.parameters(), *model.value_embeds.parameters()]
     scalar_params = [model.scalars]
     head_params: list[nn.Parameter] = [model.lm_head_w]
+    grad_accum_steps = args.grad_accum_steps
     # sanity check
     params_collections = [
         hidden_matrix_params,
@@ -669,16 +670,20 @@ def main():
 
     # init the optimizer(s)
     adam_param_groups = [
-        dict(params=head_params, lr=1 / 320),
-        dict(params=embed_params, lr=0.3),
-        dict(params=scalar_params, lr=0.015),
+        dict(params=head_params, lr=1 / 320 / grad_accum_steps),
+        dict(params=embed_params, lr=0.3 / grad_accum_steps),
+        dict(params=scalar_params, lr=0.015 / grad_accum_steps),
     ]
     # small adam epsilon by @YouJiacheng. this is an alternate method of fixing the world_size dependence
     # discovered by @fernbear.bsky.social https://x.com/hi_tysam/status/1879692937589875094
     optimizer1 = torch.optim.AdamW(
-        adam_param_groups, betas=(0.8, 0.95), eps=1e-10, weight_decay=0.0, fused=True
+        adam_param_groups,
+        betas=(0.8, 0.95),
+        eps=1e-10,
+        weight_decay=0.0,
+        fused=True,
     )
-    optimizer2 = Muon(hidden_matrix_params, lr=0.025, momentum=0.95)
+    optimizer2 = Muon(hidden_matrix_params, lr=0.025 / grad_accum_steps, momentum=0.95)
     optimizers: list[torch.optim.Optimizer] = [optimizer1, optimizer2]
 
     for opt in optimizers:
@@ -703,9 +708,7 @@ def main():
         inputs = targets = torch.randint(
             0, args.vocab_size, size=(args.train_seq_len,), device="cuda"
         )
-        loss = model(inputs.to(torch.int32), targets, get_window_size_blocks(0))
-        loss /= args.grad_accum_steps
-        loss.backward()
+        model(inputs.to(torch.int32), targets, get_window_size_blocks(0)).backward()
         for opt in optimizers:
             opt.step()
         model.zero_grad(set_to_none=True)
@@ -724,10 +727,7 @@ def main():
     # start the clock
     t0 = time.perf_counter()
     # begin training
-    grad_accum_steps = args.grad_accum_steps
     train_steps = args.num_iterations * grad_accum_steps
-
-    scaler = torch.amp.GradScaler("cuda")
 
     # Log initial hyperparameters for observability
     initial_lr = optimizers[0].param_groups[0]["initial_lr"]  # AdamW initial lr
@@ -803,8 +803,7 @@ def main():
 
         # --------------- TRAINING SECTION -----------------
         inputs, targets = next(train_loader)
-        loss = model(inputs, targets, get_window_size_blocks(update_step))
-        scaler.scale(loss).backward()
+        model(inputs, targets, get_window_size_blocks(update_step)).backward()
         if grad_accum_step == (grad_accum_steps - 1):
             # set optimization hyperparameters
             for opt in optimizers:
@@ -827,8 +826,7 @@ def main():
             )
             # step the optimizers
             for opt in optimizers:
-                scaler.step(opt)
-            scaler.update()
+                opt.step()
             # null the gradients
             model.zero_grad(set_to_none=True)
             print0(
