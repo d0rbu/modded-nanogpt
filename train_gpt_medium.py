@@ -539,14 +539,14 @@ class Hyperparameters:
     )  # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
     val_seq_len = 4 * 42 * 1024  # FlexAttention sequence length for validation
     # optimization
-    grad_accum_steps = 12
-    num_iterations = 5960  # number of iterations to run
+    grad_accum_steps = 1
+    num_iterations = 65536  # number of iterations to run
     cooldown_frac = 0.7  # fraction of training spent cooling down the learning rate
     # architecture
     vocab_size = 50257
     # evaluation and logging
     val_loss_every = (
-        16  # every how many steps to evaluate val loss? 0 for only at the end
+        1024  # every how many steps to evaluate val loss? 0 for only at the end
     )
     save_checkpoint = True
 
