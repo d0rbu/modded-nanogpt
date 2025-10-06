@@ -683,7 +683,7 @@ def main():
         weight_decay=0.0,
         fused=True,
     )
-    optimizer2 = Muon(hidden_matrix_params, lr=0.025 / grad_accum_steps, momentum=0.95)
+    optimizer2 = Muon(hidden_matrix_params, lr=0.025, momentum=0.95)
     optimizers: list[torch.optim.Optimizer] = [optimizer1, optimizer2]
 
     for opt in optimizers:
