@@ -670,9 +670,9 @@ def main():
 
     # init the optimizer(s)
     adam_param_groups = [
-        dict(params=head_params, lr=1 / 320 / grad_accum_steps),
-        dict(params=embed_params, lr=0.3 / grad_accum_steps),
-        dict(params=scalar_params, lr=0.015 / grad_accum_steps),
+        dict(params=head_params, lr=1 / 320),
+        dict(params=embed_params, lr=0.3),
+        dict(params=scalar_params, lr=0.015),
     ]
     # small adam epsilon by @YouJiacheng. this is an alternate method of fixing the world_size dependence
     # discovered by @fernbear.bsky.social https://x.com/hi_tysam/status/1879692937589875094
@@ -708,7 +708,9 @@ def main():
         inputs = targets = torch.randint(
             0, args.vocab_size, size=(args.train_seq_len,), device="cuda"
         )
-        model(inputs.to(torch.int32), targets, get_window_size_blocks(0)).backward()
+        loss = model(inputs.to(torch.int32), targets, get_window_size_blocks(0))
+        loss /= grad_accum_steps
+        loss.backward()
         for opt in optimizers:
             opt.step()
         model.zero_grad(set_to_none=True)
@@ -803,7 +805,9 @@ def main():
 
         # --------------- TRAINING SECTION -----------------
         inputs, targets = next(train_loader)
-        model(inputs, targets, get_window_size_blocks(update_step)).backward()
+        loss = model(inputs, targets, get_window_size_blocks(update_step))
+        loss /= grad_accum_steps
+        loss.backward()
         if grad_accum_step == (grad_accum_steps - 1):
             # set optimization hyperparameters
             for opt in optimizers:
