@@ -670,9 +670,9 @@ def main():
 
     # init the optimizer(s)
     adam_param_groups = [
-        dict(params=head_params, lr=1 / 320),
-        dict(params=embed_params, lr=0.3),
-        dict(params=scalar_params, lr=0.015),
+        dict(params=head_params, lr=1 / 3200),
+        dict(params=embed_params, lr=0.03),
+        dict(params=scalar_params, lr=0.0015),
     ]
     # small adam epsilon by @YouJiacheng. this is an alternate method of fixing the world_size dependence
     # discovered by @fernbear.bsky.social https://x.com/hi_tysam/status/1879692937589875094
@@ -683,7 +683,7 @@ def main():
         weight_decay=0.0,
         fused=True,
     )
-    optimizer2 = Muon(hidden_matrix_params, lr=0.025, momentum=0.95)
+    optimizer2 = Muon(hidden_matrix_params, lr=0.0025, momentum=0.95)
     optimizers: list[torch.optim.Optimizer] = [optimizer1, optimizer2]
 
     for opt in optimizers:
